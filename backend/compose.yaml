@@ -21,6 +21,7 @@ services:
       - path: .env
         required: false
     environment:
+      INITIALIZE_DATABASE: "true"
       DATABASE_URL: postgresql+psycopg://app:app@db:5432/app
     ports:
       - "8000:8000"

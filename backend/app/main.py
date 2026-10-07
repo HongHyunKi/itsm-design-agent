@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import health, items
+from app.api.v1 import design, health, items
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.core.logging import get_request_logger, setup_logging
@@ -19,9 +19,10 @@ from app.schemas.common import ErrorResponse
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     setup_logging(settings.log_level)
-    init_db()
-    if not settings.is_live:
-        seed()
+    if settings.initialize_database:
+        init_db()
+        if not settings.is_live:
+            seed()
     yield
 
 
@@ -30,7 +31,16 @@ def _logger(request: Request):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title=get_settings().app_name, lifespan=lifespan)
+    app = FastAPI(
+        title=f"{get_settings().app_name} · ITSM 설계 자동화",
+        description="서비스 요청·장애 관리 요구사항으로 설계 초안을 생성하는 백엔드 API입니다.",
+        openapi_tags=[
+            {"name": "design", "description": "요구사항 기반 설계 생성"},
+            {"name": "health", "description": "서버 상태 확인"},
+            {"name": "items", "description": "샘플 코드 · 기본 CRUD 예제"},
+        ],
+        lifespan=lifespan,
+    )
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):
@@ -62,8 +72,21 @@ def create_app() -> FastAPI:
         body = ErrorResponse(code="internal_error", message="Internal server error")
         return JSONResponse(status_code=500, content=body.model_dump(mode="json"), headers={"X-Request-ID": request_id})
 
+    app.include_router(design.router, prefix="/api/v1")
     app.include_router(health.router)
     app.include_router(items.router, prefix="/api/v1")
+
+    default_openapi = app.openapi
+
+    def openapi_with_examples():
+        schema = default_openapi()
+        # FastAPI가 문서 메타데이터의 None을 제거하므로 필수 nullable 필드의 예시를 복원한다.
+        schema["paths"]["/api/v1/design"]["post"]["responses"]["200"]["content"]["application/json"]["example"] = (
+            design.RESPONSE_EXAMPLE
+        )
+        return schema
+
+    app.openapi = openapi_with_examples
     return app
 
 

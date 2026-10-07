@@ -13,6 +13,9 @@ class _RequestIdDefault(logging.Filter):
 
 
 def setup_logging(level: str = "INFO") -> None:
+    # SDK 디버그 로그는 요청/응답 본문을 포함할 수 있으므로 앱 로그 레벨과 분리한다.
+    for name in ("anthropic", "httpx", "httpx2", "httpcore", "httpcore2"):
+        logging.getLogger(name).setLevel(logging.WARNING)
     handler = logging.StreamHandler()
     handler.addFilter(_RequestIdDefault())
     handler.setFormatter(logging.Formatter(LOG_FORMAT))
