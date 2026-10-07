@@ -33,7 +33,8 @@ router = APIRouter(tags=["design"])
 `prompt_caching_enabled`는 캐싱 설정이며 실제 적중은 `cache_read_input_tokens`로 확인합니다.
 `tracing_enabled`는 추적 활성화 여부이며 Langfuse 원격 수신을 보장하지 않습니다.
 
-예시는 `backend/scenarios`의 대표 입력과 사람이 작성한 기준 설계입니다. 실제 생성 내용·시간·토큰 수는 실행마다 달라집니다.""",
+예시는 `backend/scenarios`의 대표 시나리오입니다. 요청은 고객이 보낸 가상의 요구사항 정의서이고,
+응답은 사람이 작성한 기준 설계입니다. 실제 생성 내용·시간·토큰 수는 실행마다 달라집니다.""",
     responses={
         200: {
             "description": "설계 생성·검토 완료 (DB 실행 검증은 미실시)",

@@ -35,7 +35,7 @@ curl --fail-with-body http://127.0.0.1:8000/api/v1/design \
   -d '{"text":"사용자가 제목을 입력해 서비스 요청 또는 장애를 등록하고 유형과 제목을 저장한다."}'
 ```
 
-입력은 JSON `text` 하나이며 1~12,000자, 공백만 있는 입력은 거절합니다. 길이 상한은 출력 완료 보장이 아닙니다. 기본 2048토큰으로 긴 설계가 잘리면 502 `model_output_truncated`를 반환합니다. `ANTHROPIC_MAX_TOKENS`를 늘리거나 요구사항 범위를 줄여 다시 요청하세요. 서버가 원문을 자동으로 줄이거나 성공 샘플로 대체하지 않습니다.
+입력은 JSON `text` 하나이며 1~12,000자, 공백만 있는 입력은 거절합니다. 길이 상한은 출력 완료 보장이 아닙니다. 기본 8192토큰으로도 긴 설계가 잘리면 502 `model_output_truncated`를 반환합니다. `ANTHROPIC_MAX_TOKENS`를 늘리거나 요구사항 범위를 줄여 다시 요청하세요. 서버가 원문을 자동으로 줄이거나 성공 샘플로 대체하지 않습니다.
 
 ## 환경변수
 
@@ -45,7 +45,7 @@ curl --fail-with-body http://127.0.0.1:8000/api/v1/design \
 | ----------------------------------------- | -------------------------- | ----------------------------------------------- |
 | ANTHROPIC_API_KEY                         | 빈 값                      | 실제 호출에 필요, 로컬 .env에만 보관            |
 | ANTHROPIC_MODEL                           | claude-haiku-4-5           | 생성과 검토에 같은 모델 사용                    |
-| ANTHROPIC_MAX_TOKENS                      | 2048                       | 호출별 출력 상한, 1~64000                       |
+| ANTHROPIC_MAX_TOKENS                      | 8192                       | 호출별 출력 상한, 1~64000                       |
 | ANTHROPIC_TIMEOUT_SECONDS                 | 120                        | 호출별 전체 시간 제한, 최대 600초               |
 | ENABLE_PROMPT_CACHING                     | true                       | 고정 시스템 프롬프트에 ephemeral 캐시 경계 설정 |
 | INITIALIZE_DATABASE                       | false                      | 기존 items용 DB 마이그레이션·시드 실행 여부     |

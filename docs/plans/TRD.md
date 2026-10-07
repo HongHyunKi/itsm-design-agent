@@ -7,7 +7,7 @@
 | 항목 | 내용 |
 | --- | --- |
 | 프로젝트 | ITSM 요구사항 기반 시스템 자동 설계 에이전트 |
-| 버전·최종 수정일 | 0.3 · 2026-10-07 |
+| 버전·최종 수정일 | 0.4 · 2026-10-07 |
 | 상태 | 개발팀 검토용 기술 설계안 |
 | 기준 | [PRD](PRD.md), [요구사항 정의서](요구사항_정의서.md), [기능 명세서](기능_명세서.md) |
 
@@ -53,7 +53,7 @@ API는 입력 검증과 작업 등록·조회에 집중한다. 장시간 생성�
 
 FastAPI/Pydantic을 유지하고 LangGraph의 단일 StateGraph로 generate → validate → render → review를 실행한다. Anthropic 공식 SDK `messages.create(output_config.format=...)`와 `transform_schema(Pydantic 모델)`을 사용하며, stop_reason 확인 후 Pydantic 검증을 수행한다. 잘린 JSON은 파싱 오류로 숨기지 않고 출력 한도 초과로 보고한다. Langfuse 공식 SDK로 내용 없는 단계·모델 사용량 추적을 선택적으로 제공한다. 실행·환경·실측 상태는 [실행 계획](tasks/001-백엔드-MVP.md)과 [README](../../README.md)를 따른다.
 
-기본값은 claude-haiku-4-5, 출력 2048토큰, 캐싱 활성화다. 입력 12,000자, 호출당 120초이며 SDK 재시도는 0회다. `/api/v1/design`은 DB 없이 실행하고 기존 DB 초기화는 `INITIALIZE_DATABASE`로 선택한다. 자료형·단일 키 제약 범위와 추적표 단순화는 실행 계획에 명시한다. 아래 구성은 장기 목표이며 현재 백엔드에 저장·작업자·공급자 추상화를 추가하는 근거로 사용하지 않는다.
+기본값은 claude-haiku-4-5, 출력 8192토큰, 캐싱 활성화다. 입력 12,000자, 호출당 120초이며 SDK 재시도는 0회다. `/api/v1/design`은 DB 없이 실행하고 기존 DB 초기화는 `INITIALIZE_DATABASE`로 선택한다. 자료형·단일 키 제약 범위와 추적표 단순화는 실행 계획에 명시한다. 아래 구성은 장기 목표이며 현재 백엔드에 저장·작업자·공급자 추상화를 추가하는 근거로 사용하지 않는다.
 
 ### 2.2 장기 기술 선택안
 

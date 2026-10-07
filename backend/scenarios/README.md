@@ -10,7 +10,7 @@
 | [02-incident-response](02-incident-response/) | 장애 등록, 지원 그룹 배정, 조치 기록, 종료 | NULL 가능 FK, UNIQUE, 원문에 없는 제안 요구사항 |
 | [03-service-catalog](03-service-catalog/) | 카탈로그 항목 관리, 서비스 요청 제출·완료, 본인 요청 조회 | boolean·integer·date, 선택 입력, 조회 요구사항 |
 
-- `request.json`: 합성 원문 `{"text": ...}`
+- `request.json`: 고객이 보낸 가상의 요구사항 정의서 `{"text": ...}`. 모델에게 처리 방법을 지시하는 문장은 넣지 않습니다.
 - `expected.json`: `title`(예시 이름), 사람이 작성한 기준 `design`·`review`, 사람이 확인할 `manual_checks`, `--fault semantic-omission`에서 제거할 컬럼·기능 입력과 기대 검토 후보(`semantic_omission`)
 
 **시나리오 추가:** 새 폴더에 두 파일을 만들면 됩니다. 기준 설계는 구조 검증을 통과해야 하며, 오류 주입을 위해 FK 1개 이상과 검토 후보 1개 이상을 포함합니다. `cd backend && .venv/bin/pytest -q`가 모든 시나리오에 7종 오류 주입을 실행합니다.
@@ -48,10 +48,10 @@
 로컬 `backend/.env`에 키를 설정한 뒤 실행합니다. 실제 호출 비용이 발생합니다.
 
 ```bash
-./debug-design --mode live --max-tokens 8192
+./debug-design --mode live
 ```
 
-기본 `.env`의 `ANTHROPIC_MAX_TOKENS=2048`은 변경하지 않습니다. 대표 입력은 단일 짧은 요청보다 출력이 크므로 **이번 실행만 8192**를 명시합니다. 01 시나리오의 실제 최초 생성 출력은 3296토큰이었습니다. 설정 원래값과 적용값을 보고서에 함께 기록합니다. `--max-tokens`를 생략하면 `.env` 설정을 그대로 사용합니다.
+기본 `ANTHROPIC_MAX_TOKENS`는 8192입니다. 대표 시나리오의 실제 생성 출력은 약 3300~3900토큰이라 2048에서는 잘립니다. `--max-tokens`는 이번 실행만 한도를 바꿀 때 사용합니다. 설정 원래값과 적용값을 보고서에 함께 기록합니다. `--max-tokens`를 생략하면 `.env` 설정을 그대로 사용합니다.
 
 생성과 검토는 각 1회이며 실패 후 자동 재시도하거나 기준 결과로 대체하지 않습니다. `live`는 실제 호출 경로이고 `reference`는 비용 없는 재현 경로입니다. API 키 미설정·구조 실패·모델 오류 등은 종료 코드 1, 그래프 완료는 0입니다. 잘못된 CLI 옵션은 2입니다. 코드 0이 의미 품질의 완전성을 보장하지는 않습니다.
 

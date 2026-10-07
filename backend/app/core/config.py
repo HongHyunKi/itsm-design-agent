@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     initialize_database: bool = False
     anthropic_api_key: SecretStr = SecretStr("")
     anthropic_model: str = "claude-haiku-4-5"
-    anthropic_max_tokens: int = Field(default=2048, ge=1, le=64000)
+    anthropic_max_tokens: int = Field(default=8192, ge=1, le=64000)
     anthropic_timeout_seconds: float = Field(default=120, gt=0, le=600)
     enable_prompt_caching: bool = True
     langfuse_public_key: str = ""
