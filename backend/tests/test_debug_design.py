@@ -3,15 +3,17 @@ import json
 
 import pytest
 
+import scenarios
 from app.core.config import Settings
 from app.schemas.design import Design
 from app.services.design_model import validate_design
-from scripts.debug_design import SCENARIO, execute, redact, write_html
+from scripts.debug_design import execute, redact, write_html
 from tests import test_design
 
 model_api = test_design.model_api
 
 
+@pytest.mark.parametrize("scenario", scenarios.names())
 @pytest.mark.parametrize(
     "fault,failed_stage,skipped",
     [
@@ -25,14 +27,13 @@ model_api = test_design.model_api
         ("semantic-omission", None, []),
     ],
 )
-def test_debugger_runs_real_graph_without_network(fault, failed_stage, skipped, monkeypatch):
+def test_debugger_runs_real_graph_without_network(scenario, fault, failed_stage, skipped, monkeypatch):
     def forbidden(*args, **kwargs):
         pytest.fail("기준 재생은 외부 모델을 호출하면 안 됨")
 
     monkeypatch.setattr("app.services.design.anthropic.AsyncAnthropic", forbidden)
-    expected = json.loads((SCENARIO / "expected.json").read_text())
+    source, expected = scenarios.load(scenario)
     before = json.dumps(expected)
-    source = json.loads((SCENARIO / "request.json").read_text())["text"]
     assert not validate_design(Design.model_validate(expected["design"]), source)
     events = []
     result = asyncio.run(execute("reference", fault, Settings(_env_file=None), expected, source, events.append))
@@ -61,8 +62,7 @@ def test_debugger_runs_real_graph_without_network(fault, failed_stage, skipped, 
 
 
 def test_debug_report_escapes_html_and_redacts_known_secrets(tmp_path):
-    expected = json.loads((SCENARIO / "expected.json").read_text())
-    source = json.loads((SCENARIO / "request.json").read_text())["text"]
+    source, expected = scenarios.load(scenarios.names()[0])
     result = asyncio.run(execute("reference", None, Settings(_env_file=None), expected, source, lambda _: None))
     report = redact(
         {
@@ -87,8 +87,7 @@ def test_debug_report_escapes_html_and_redacts_known_secrets(tmp_path):
 
 def test_live_debugger_observes_real_model_boundary(model_api):
     # 기존 SDK HTTP MockTransport로 실제 호출 경로를 검증하고 외부 네트워크는 사용하지 않는다.
-    expected = json.loads((SCENARIO / "expected.json").read_text())
-    source = json.loads((SCENARIO / "request.json").read_text())["text"]
+    source, expected = scenarios.load(scenarios.names()[0])
     model_api.generation, model_api.review = expected["design"], expected["review"]
     result = asyncio.run(
         execute(
@@ -108,8 +107,7 @@ def test_live_debugger_observes_real_model_boundary(model_api):
 
 
 def test_live_missing_key_is_not_counted_as_external_call():
-    expected = json.loads((SCENARIO / "expected.json").read_text())
-    source = json.loads((SCENARIO / "request.json").read_text())["text"]
+    source, expected = scenarios.load(scenarios.names()[0])
     result = asyncio.run(
         execute("live", None, Settings(_env_file=None, anthropic_api_key=""), expected, source, lambda _: None)
     )

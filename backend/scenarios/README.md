@@ -2,8 +2,19 @@
 
 이 시나리오는 **개발·디버깅용 기준 사례**입니다. ‘베스트 출력’은 사람이 작성한 검토 가능한 설계 제안이며, 모델이 항상 똑같은 JSON을 반환한다는 뜻은 아닙니다.
 
-- [request.json](request.json): 서비스 요청·장애 등록, 상태 변경·재개, 변경 이력, 저장 불필요 안내, 미정 보관 정책을 포함하는 합성 입력
-- [expected.json](expected.json): 요구사항 4개·기능 4개·테이블 2개의 기준 설계, FK·추적·검토 결과, 사람이 확인할 업무 조건
+시나리오 하나는 폴더 하나(`NN-이름/request.json`·`expected.json`)입니다. 폴더 이름순으로 Swagger 요청·응답 예시, `./debug-design --scenario`, 테스트에 자동으로 포함됩니다.
+
+| 폴더 | 내용 | 주요 검토 포인트 |
+| --- | --- | --- |
+| [01-ticket-lifecycle](01-ticket-lifecycle/) | 서비스 요청·장애 등록, 상태 변경·재개, 변경 이력, 저장 불필요 안내 | 1:N 이력, 삭제 금지, 저장하지 않는 요구사항 |
+| [02-incident-response](02-incident-response/) | 장애 등록, 지원 그룹 배정, 조치 기록, 종료 | NULL 가능 FK, UNIQUE, 원문에 없는 제안 요구사항 |
+| [03-service-catalog](03-service-catalog/) | 카탈로그 항목 관리, 서비스 요청 제출·완료, 본인 요청 조회 | boolean·integer·date, 선택 입력, 조회 요구사항 |
+
+- `request.json`: 합성 원문 `{"text": ...}`
+- `expected.json`: `title`(예시 이름), 사람이 작성한 기준 `design`·`review`, 사람이 확인할 `manual_checks`, `--fault semantic-omission`에서 제거할 컬럼·기능 입력과 기대 검토 후보(`semantic_omission`)
+
+**시나리오 추가:** 새 폴더에 두 파일을 만들면 됩니다. 기준 설계는 구조 검증을 통과해야 하며, 오류 주입을 위해 FK 1개 이상과 검토 후보 1개 이상을 포함합니다. `cd backend && .venv/bin/pytest -q`가 모든 시나리오에 7종 오류 주입을 실행합니다.
+
 - [루트 실행 명령](../../debug-design) · [실행 코드](../scripts/debug_design.py): API와 동일한 `app.services.design.graph`의 실제 단계·분기를 실행
 - [실행 계획과 실측](../../docs/plans/tasks/002-시나리오-디버깅.md)
 
@@ -15,7 +26,7 @@
 ./debug-design
 ```
 
-`./debug-design --help`로 전체 옵션을 확인할 수 있습니다. 기본값은 `--mode reference`입니다. **모델 응답만 기준 파일로 대체**하며 Pydantic 검사·참조 검사·그래프 분기·ERD/DDL 변환은 실제 코드를 실행합니다. 외부 모델 호출은 0회이고 토큰 수 0은 실측치가 아닌 재생 모드 표시입니다. 실서비스 API의 mock 모드로 추가된 기능은 아닙니다.
+`./debug-design --help`로 전체 옵션을 확인할 수 있습니다. 기본값은 첫 번째 시나리오와 `--mode reference`이며, 다른 시나리오는 `./debug-design 2`(번호) 또는 `./debug-design 02-incident-response`(폴더 이름)로 지정합니다. `--scenario 2`도 같습니다. `./debug-design all`은 모든 시나리오를 차례로 실행해 시나리오마다 별도 보고서를 만들고, 하나라도 실패하면 종료 코드 1을 반환합니다. **모델 응답만 기준 파일로 대체**하며 Pydantic 검사·참조 검사·그래프 분기·ERD/DDL 변환은 실제 코드를 실행합니다. 외부 모델 호출은 0회이고 토큰 수 0은 실측치가 아닌 재생 모드 표시입니다. 실서비스 API의 mock 모드로 추가된 기능은 아닙니다.
 
 터미널에 단계 시작·종료·소요 시간과 `report.html` 경로가 출력됩니다. 그 파일을 브라우저로 열면 됩니다. macOS에서는 출력된 경로를 복사해 `open 경로/report.html`로 열 수도 있습니다.
 
@@ -40,7 +51,7 @@
 ./debug-design --mode live --max-tokens 8192
 ```
 
-기본 `.env`의 `ANTHROPIC_MAX_TOKENS=2048`은 변경하지 않습니다. 이 대표 입력은 단일 짧은 요청보다 출력이 크므로 **이번 실행만 8192**를 명시합니다. 실제 최초 생성 출력은 3296토큰이었습니다. 설정 원래값과 적용값을 보고서에 함께 기록합니다. `--max-tokens`를 생략하면 `.env` 설정을 그대로 사용합니다.
+기본 `.env`의 `ANTHROPIC_MAX_TOKENS=2048`은 변경하지 않습니다. 대표 입력은 단일 짧은 요청보다 출력이 크므로 **이번 실행만 8192**를 명시합니다. 01 시나리오의 실제 최초 생성 출력은 3296토큰이었습니다. 설정 원래값과 적용값을 보고서에 함께 기록합니다. `--max-tokens`를 생략하면 `.env` 설정을 그대로 사용합니다.
 
 생성과 검토는 각 1회이며 실패 후 자동 재시도하거나 기준 결과로 대체하지 않습니다. `live`는 실제 호출 경로이고 `reference`는 비용 없는 재현 경로입니다. API 키 미설정·구조 실패·모델 오류 등은 종료 코드 1, 그래프 완료는 0입니다. 잘못된 CLI 옵션은 2입니다. 코드 0이 의미 품질의 완전성을 보장하지는 않습니다.
 
@@ -49,7 +60,7 @@ API 자체의 최종 응답도 확인하려면 서버를 실행한 뒤 같은 �
 ```bash
 curl --fail-with-body http://127.0.0.1:8000/api/v1/design \
   -H 'Content-Type: application/json' \
-  --data-binary @backend/scenarios/request.json
+  --data-binary @backend/scenarios/01-ticket-lifecycle/request.json
 ```
 
 API는 서버의 `.env` 출력 한도를 사용합니다. 위 CLI 옵션은 서버 설정에 영향을 주지 않습니다. 단계별 보고서는 CLI에서만 생성합니다.
@@ -69,7 +80,7 @@ API는 서버의 `.env` 출력 한도를 사용합니다. 위 CLI 옵션은 서�
 | truncated | 출력 한도 오류 주입 → generate 실패 → 이후 생략 |
 | api-error | 외부 API 오류 주입 → generate 실패 → 이후 생략 |
 | review-reference | 생성·검증·변환 성공 → review의 잘못된 참조로 실패 |
-| semantic-omission | 변경자 저장을 제거한 구조적으로 유효한 설계 → review에서 누락 후보 표시 |
+| semantic-omission | 시나리오의 `semantic_omission`에 지정한 컬럼·기능 입력을 제거한 구조적으로 유효한 설계 → review에서 누락 후보 표시 |
 
 오류 주입은 `reference`에서만 허용합니다. `semantic-omission`의 리뷰도 미리 작성한 기준 응답입니다. LLM이 결함을 실제로 탐지했다는 증거가 아닙니다. 기준 파일 원본을 수정하지 않으며 실행 복사본만 바꿉니다.
 

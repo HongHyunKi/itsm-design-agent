@@ -12,15 +12,15 @@ from unittest.mock import patch
 
 from pydantic import BaseModel, ValidationError
 
+import scenarios
 from app.core.config import Settings
 from app.core.exceptions import AppError
 from app.core.logging import setup_logging
-from app.schemas.design import DesignRequest, ModelCall
+from app.schemas.design import ModelCall
 from app.services import design as service
 from app.services.design_model import render_model, validate_design
 
 BACKEND = Path(__file__).resolve().parents[1]
-SCENARIO = BACKEND / "scenarios"
 STAGES = {
     "generate": ("설계 생성", "Anthropic 모델 호출", "원문에서 요구사항·근거·기능·모델·추적·가정·질문을 생성"),
     "validate": (
@@ -71,31 +71,23 @@ def redact(value, secrets):
 
 
 def inject_fault(expected, fault):
+    """시나리오 구조에 의존하지 않는 위치에 주입한다. 의미 누락은 시나리오의 semantic_omission 정의를 따른다."""
     design = expected["design"]
     if fault == "bad-reference":
-        design["data_model"]["tables"][1]["columns"][1]["references"]["table"] = "missing_table"
+        columns = (c for t in design["data_model"]["tables"] for c in t["columns"])
+        next(c for c in columns if c["references"])["references"]["table"] = "missing_table"
     elif fault == "missing-trace":
         design["traceability"].pop()
     elif fault == "review-reference":
         expected["review"]["findings"][0]["related_ids"] = ["C-REQ-999"]
     elif fault == "semantic-omission":
-        # 구조는 유효하지만 업무 의미가 빠진 사례: 변경자 컬럼과 기능 입력을 제거한다.
-        design["data_model"]["tables"][1]["columns"] = [
-            c for c in design["data_model"]["tables"][1]["columns"] if c["name"] != "changed_by"
-        ]
-        design["functions"][2]["inputs"].remove("변경자 식별자")
-        expected["review"]["summary"] = (
-            "구조 검사는 통과했지만 변경자 저장 누락 후보가 있습니다. 오류 주입용 기준 검토입니다."
-        )
-        expected["review"]["findings"].append(
-            {
-                "kind": "omission",
-                "description": "변경자 식별자를 저장할 컬럼과 이력 기능 입력이 빠졌습니다.",
-                "related_ids": ["C-REQ-3", "C-FUN-3", "ticket_history"],
-                "evidence": ["변경자 식별자"],
-                "suggestion": "이력에 변경자 식별자를 저장하도록 보완하세요.",
-            }
-        )
+        # 구조는 유효하지만 업무 의미가 빠진 사례: 지정 컬럼과 기능 입력을 제거한다.
+        spec = expected["semantic_omission"]
+        table = next(t for t in design["data_model"]["tables"] if t["name"] == spec["table"])
+        table["columns"] = [c for c in table["columns"] if c["name"] != spec["column"]]
+        next(f for f in design["functions"] if f["id"] == spec["function"])["inputs"].remove(spec["input"])
+        expected["review"]["summary"] = "구조 검사는 통과했지만 저장 누락 후보가 있습니다. 오류 주입용 기준 검토입니다."
+        expected["review"]["findings"].append(spec["finding"])
 
 
 def contract_checks(state, calls, mode):
@@ -112,9 +104,9 @@ def contract_checks(state, calls, mode):
         ("FK로 연결한 데이터 모델 존재", any(c.references for t in design.data_model.tables for c in t.columns)),
         (
             "저장 불필요 요구사항의 사유와 빈 테이블 연결",
-            any(
-                not r.needs_storage
-                and any(
+            all(
+                r.needs_storage
+                or any(
                     t.requirement_id == r.id and not t.tables and t.no_storage_reason.strip()
                     for t in design.traceability
                 )
@@ -318,46 +310,34 @@ summary{{font-weight:700;cursor:pointer}}pre{{white-space:pre-wrap;overflow-wrap
     path.write_text(document, encoding="utf-8")
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        prog="./debug-design", description="ITSM 대표 합성 시나리오의 실제 그래프 단계별 디버깅"
-    )
-    parser.add_argument("--mode", choices=("reference", "live"), default="reference")
-    parser.add_argument("--fault", choices=FAULTS)
-    parser.add_argument("--max-tokens", type=int, help="이번 실행 출력 한도만 변경 (.env 보존)")
-    args = parser.parse_args()
-    if args.fault and args.mode != "reference":
-        parser.error("--fault는 외부 호출 없는 reference 모드에서만 사용합니다.")
-    if args.max_tokens is not None and not 1 <= args.max_tokens <= 64000:
-        parser.error("--max-tokens는 1~64000입니다.")
-    try:
-        settings = Settings(_env_file=BACKEND / ".env")
-    except ValidationError:
-        parser.error("환경변수 형식이 잘못되었습니다. 값은 출력하지 않습니다. .env 설정을 확인하세요.")
-    default_limit = settings.anthropic_max_tokens
-    if args.max_tokens is not None:
-        settings.anthropic_max_tokens = args.max_tokens
-    setup_logging("WARNING")
-    source = DesignRequest.model_validate_json((SCENARIO / "request.json").read_text()).text
-    expected = json.loads((SCENARIO / "expected.json").read_text())
+def pick_scenarios(value):
+    """all, 폴더 이름, 번호(2·02) 중 하나로 실행할 시나리오를 고른다."""
+    names = scenarios.names()
+    if value == "all":
+        return names
+    found = [n for n in names if value == n or value.isdigit() and int(n.split("-", 1)[0]) == int(value)]
+    if not found:
+        raise argparse.ArgumentTypeError(f"all, 번호 또는 {', '.join(names)} 중 하나")
+    return found
+
+
+def run_scenario(name, args, settings, default_limit, secrets):
+    source, expected = scenarios.load(name)
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S") + "-" + uuid.uuid4().hex[:8]
     directory = BACKEND / ".debug-runs" / run_id
     directory.mkdir(parents=True, mode=0o700)
-    secrets = [
-        settings.anthropic_api_key.get_secret_value(),
-        settings.langfuse_secret_key.get_secret_value(),
-        settings.secret_key.get_secret_value(),
-    ]
     with (directory / "events.jsonl").open("w", encoding="utf-8") as file:
 
         def sink(event):
             file.write(json.dumps(redact(serializable(event), secrets), ensure_ascii=False) + "\n")
             file.flush()
 
+        print(f"[{name}]", flush=True)
         result = asyncio.run(execute(args.mode, args.fault, settings, expected, source, sink))
     report = redact(
         {
             "mode": args.mode,
+            "scenario": name,
             "run_id": run_id,
             "source": source,
             "expected": expected,
@@ -367,6 +347,7 @@ def main():
                 "env_max_tokens": default_limit,
                 "timeout_seconds": settings.anthropic_timeout_seconds,
                 "prompt_caching_enabled": settings.enable_prompt_caching,
+                "scenario": name,
                 "fault": args.fault,
                 "tracing": "local_only",
                 "graph": "app.services.design.graph",
@@ -380,9 +361,49 @@ def main():
     for key, filename in [("mermaid_erd", "draft-model.mmd"), ("postgresql_ddl", "draft-schema.sql")]:
         if key in report["result"]:
             (directory / filename).write_text(report["result"][key], encoding="utf-8")
-    print(f"{report['status']} · {args.mode} · 외부 모델 호출 {report['external_model_calls']}회")
+    print(f"{report['status']} · {name} · {args.mode} · 외부 모델 호출 {report['external_model_calls']}회")
     print(f"보고서: {directory / 'report.html'}")
-    return 1 if report["status"] == "failed" else 0
+    return report["status"] != "failed"
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="./debug-design", description="ITSM 대표 합성 시나리오의 실제 그래프 단계별 디버깅"
+    )
+    choices = "{all,번호," + ",".join(scenarios.names()) + "}"
+    help_text = "기본값은 첫 시나리오. all은 시나리오마다 별도 보고서를 만든다."
+    parser.add_argument("scenario", nargs="?", type=pick_scenarios, metavar=choices, help=help_text)
+    parser.add_argument(
+        "--scenario", dest="scenario_option", type=pick_scenarios, metavar=choices, help="위치 인자와 같음"
+    )
+    parser.add_argument("--mode", choices=("reference", "live"), default="reference")
+    parser.add_argument("--fault", choices=FAULTS)
+    parser.add_argument("--max-tokens", type=int, help="이번 실행 출력 한도만 변경 (.env 보존)")
+    args = parser.parse_args()
+    if args.scenario and args.scenario_option:
+        parser.error("시나리오는 위치 인자 또는 --scenario 중 하나로만 지정합니다.")
+    args.scenario = args.scenario or args.scenario_option or scenarios.names()[:1]
+    if args.fault and args.mode != "reference":
+        parser.error("--fault는 외부 호출 없는 reference 모드에서만 사용합니다.")
+    if args.max_tokens is not None and not 1 <= args.max_tokens <= 64000:
+        parser.error("--max-tokens는 1~64000입니다.")
+    try:
+        settings = Settings(_env_file=BACKEND / ".env")
+    except ValidationError:
+        parser.error("환경변수 형식이 잘못되었습니다. 값은 출력하지 않습니다. .env 설정을 확인하세요.")
+    default_limit = settings.anthropic_max_tokens
+    if args.max_tokens is not None:
+        settings.anthropic_max_tokens = args.max_tokens
+    setup_logging("WARNING")
+    secrets = [
+        settings.anthropic_api_key.get_secret_value(),
+        settings.langfuse_secret_key.get_secret_value(),
+        settings.secret_key.get_secret_value(),
+    ]
+    results = [run_scenario(name, args, settings, default_limit, secrets) for name in args.scenario]
+    if len(results) > 1:
+        print(f"시나리오 {len(results)}개 중 {sum(results)}개 완료")
+    return 0 if all(results) else 1
 
 
 if __name__ == "__main__":

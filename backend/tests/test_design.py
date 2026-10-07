@@ -438,8 +438,10 @@ def test_swagger_response_example_preserves_required_null_fields(api):
     assert api[0].get("/docs").status_code == 200
     operation = api[0].get("/openapi.json").json()["paths"]["/api/v1/design"]["post"]
     requests = operation["requestBody"]["content"]["application/json"]["examples"]
-    for example in requests.values():
-        DesignRequest.model_validate(example["value"])
-    response = DesignResponse.model_validate(operation["responses"]["200"]["content"]["application/json"]["example"])
-    assert not validate_design(response.design, requests["service_request"]["value"]["text"])
-    assert render_model(response.design) == (response.mermaid_erd, response.postgresql_ddl)
+    responses = operation["responses"]["200"]["content"]["application/json"]["examples"]
+    assert requests.keys() == responses.keys() and len(requests) >= 3
+    for name, example in requests.items():
+        source = DesignRequest.model_validate(example["value"]).text
+        response = DesignResponse.model_validate(responses[name]["value"])
+        assert not validate_design(response.design, source)
+        assert render_model(response.design) == (response.mermaid_erd, response.postgresql_ddl)

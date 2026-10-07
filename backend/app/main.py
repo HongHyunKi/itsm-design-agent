@@ -81,8 +81,8 @@ def create_app() -> FastAPI:
     def openapi_with_examples():
         schema = default_openapi()
         # FastAPI가 문서 메타데이터의 None을 제거하므로 필수 nullable 필드의 예시를 복원한다.
-        schema["paths"]["/api/v1/design"]["post"]["responses"]["200"]["content"]["application/json"]["example"] = (
-            design.RESPONSE_EXAMPLE
+        schema["paths"]["/api/v1/design"]["post"]["responses"]["200"]["content"]["application/json"]["examples"] = (
+            design.RESPONSE_EXAMPLES
         )
         return schema
 

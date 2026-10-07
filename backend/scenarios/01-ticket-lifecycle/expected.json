@@ -1,4 +1,5 @@
 {
+  "title": "서비스 요청·장애 등록과 상태 이력",
   "label": "사람이 작성한 기준 설계 제안 — 실제 LLM 결과 아님",
   "design": {
     "requirements": [
@@ -336,5 +337,24 @@
     "화면 안내는 기능에 포함하되 문구 자체를 위한 테이블은 만들지 않았는가?",
     "미정 보관 정책을 임의 확정하지 않고 확인 질문으로 남겼는가?",
     "승인·SLA·알림·계정 관리 등 제외 기능을 필수 요구사항으로 추가하지 않았는가?"
-  ]
+  ],
+  "semantic_omission": {
+    "table": "ticket_history",
+    "column": "changed_by",
+    "function": "C-FUN-3",
+    "input": "변경자 식별자",
+    "finding": {
+      "kind": "omission",
+      "description": "변경자 식별자를 저장할 컬럼과 이력 기능 입력이 빠졌습니다.",
+      "related_ids": [
+        "C-REQ-3",
+        "C-FUN-3",
+        "ticket_history"
+      ],
+      "evidence": [
+        "변경자 식별자"
+      ],
+      "suggestion": "이력에 변경자 식별자를 저장하도록 보완하세요."
+    }
+  }
 }

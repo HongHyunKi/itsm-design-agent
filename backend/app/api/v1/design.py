@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body
 
 from app.api.v1.deps import SettingsDep
-from app.api.v1.design_examples import REQUEST_EXAMPLES, RESPONSE_EXAMPLE
+from app.api.v1.design_examples import REQUEST_EXAMPLES, RESPONSE_EXAMPLE, RESPONSE_EXAMPLES
 from app.schemas.common import ErrorResponse
 from app.schemas.design import DesignRequest, DesignResponse
 from app.services.design import run_design
@@ -17,7 +17,6 @@ router = APIRouter(tags=["design"])
     summary="요구사항으로 ITSM 설계 초안 생성",
     description="""서비스 요청·장애 관리 요구사항을 입력하면 한 요청에서 설계 생성과 검토를 완료합니다.
 
-**사용 방법:** Request body의 Examples에서 예시를 선택한 뒤 **Try it out → Execute**를 누르세요.
 실행하려면 서버의 로컬 `.env`에 `ANTHROPIC_API_KEY`가 필요합니다. 실제 모델 호출 비용이 발생합니다.
 
 - **입력:** `text` 1~12,000자. 공백만 있는 입력은 허용하지 않습니다.
@@ -34,11 +33,11 @@ router = APIRouter(tags=["design"])
 `prompt_caching_enabled`는 캐싱 설정이며 실제 적중은 `cache_read_input_tokens`로 확인합니다.
 `tracing_enabled`는 추적 활성화 여부이며 Langfuse 원격 수신을 보장하지 않습니다.
 
-아래 응답은 **설명용 예시**이며 생성 내용·시간·토큰 수는 실행마다 달라집니다.""",
+예시는 `backend/scenarios`의 대표 입력과 사람이 작성한 기준 설계입니다. 실제 생성 내용·시간·토큰 수는 실행마다 달라집니다.""",
     responses={
         200: {
             "description": "설계 생성·검토 완료 (DB 실행 검증은 미실시)",
-            "content": {"application/json": {"example": RESPONSE_EXAMPLE}},
+            "content": {"application/json": {"examples": RESPONSE_EXAMPLES}},
         },
         422: {
             "model": ErrorResponse,
