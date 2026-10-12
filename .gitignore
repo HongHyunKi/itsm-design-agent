@@ -5,6 +5,7 @@ __pycache__/
 *.db
 .pytest_cache/
 .DS_Store
+.omc
 
 # Local scenario debug reports (full synthetic inputs and outputs)
 backend/.debug-runs/
