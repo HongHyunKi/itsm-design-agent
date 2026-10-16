@@ -1,10 +1,12 @@
 # ITSM 요구사항 기반 설계 에이전트
 
-서비스 요청·장애 관리 요구사항에서 기능 명세, 데이터 모델, ERD·DDL, 추적표와 검토 결과를 만드는 프로젝트입니다. 목표 제품에는 문서 업로드와 설계 결과를 확인하는 웹 UI가 포함됩니다. 현재 구현은 `backend/`의 텍스트 입력 API이며, 이후 구현 범위와 작업 상태는 기획·설계 문서에서 관리합니다.
+서비스 요청·장애 관리 요구사항에서 기능 명세, 데이터 모델, ERD·DDL, 추적표와 검토 결과를 만드는 프로젝트입니다. 목표 제품에는 문서 업로드와 설계 결과를 확인하는 웹 UI가 포함됩니다. 현재 실행 가능한 설계 기능은 `backend/`의 텍스트 입력 API이며, 이후 구현 범위와 작업 상태는 기획·설계 문서에서 관리합니다.
 
 현재 `POST /api/v1/design`은 LangGraph의 `generate → validate → render → review`를 한 요청에서 실행합니다. 정상 경로에서 Anthropic 모델을 생성·검토에 각각 한 번 호출하고, 구조 검증에 실패하면 ERD·DDL 생성과 의미 검토를 실행하지 않습니다.
 
-이 4단계 그래프는 `backend/app/services/design_pipeline/`에서 파일 책임을 나눕니다. `graph.py`·`state.py`는 실행 흐름과 상태, `model_client.py`·`errors.py`는 Anthropic 호출과 단계 오류, `agents/design_generator.py`·`agents/reviewer.py`는 생성·검토 역할, `nodes/structure_validation.py`·`nodes/artifact_render.py`는 결정적 검사·변환을 맡습니다. `services/design.py`는 API 서비스 진입점이고 공통 모델 규칙은 `services/design_model.py`에 남습니다. 문서·요구사항·기능·데이터 전문 역할과 사용자 답변·DB 검증 노드는 [후속 구조안](docs/plans/백엔드_통합_구조.md)에 구분해 두었습니다.
+이 4단계 그래프는 `backend/app/services/design_pipeline/`에서 파일 책임을 나눕니다. `graph.py`·`state.py`는 실행 흐름과 상태, `model_client.py`·`errors.py`는 Anthropic 호출과 단계 오류, `agents/design_generator.py`·`agents/reviewer.py`는 생성·검토 역할, `nodes/structure_validation.py`·`nodes/artifact_render.py`는 결정적 검사·변환을 맡습니다. `services/design.py`는 API 서비스 진입점이고 기존 공통 모델 규칙은 `services/design_model.py`에 남습니다.
+
+새 단계의 계약으로 `schemas/document.py`의 위치 블록·원문 근거, `schemas/design_v1.py`의 요구사항·질문·답변·기능·공통 데이터 모델, `services/design_pipeline/contract.py`의 순수 검사·상태 전이 규칙이 작성되었습니다. 이 계약은 아직 현재 `/design` 그래프에 연결되지 않았습니다. 문서 추출과 전문 역할, 실행·답변 저장, 모델 검증 확장, 격리 DB 검사·산출물 제공은 [004 통합 계획](docs/plans/tasks/004-첨부-핵심-로직-통합.md)의 B~F 작업에서 연결합니다.
 
 - [기획·설계 문서 및 개발 계획](docs/plans/README.md)
 - [대표 시나리오와 디버깅](backend/scenarios/README.md)
