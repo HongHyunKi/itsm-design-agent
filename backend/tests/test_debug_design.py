@@ -31,7 +31,7 @@ def test_debugger_runs_real_graph_without_network(scenario, fault, failed_stage,
     def forbidden(*args, **kwargs):
         pytest.fail("기준 재생은 외부 모델을 호출하면 안 됨")
 
-    monkeypatch.setattr("app.services.design.anthropic.AsyncAnthropic", forbidden)
+    monkeypatch.setattr("app.services.design_pipeline.model_client.anthropic.AsyncAnthropic", forbidden)
     source, expected = scenarios.load(scenario)
     before = json.dumps(expected)
     assert not validate_design(Design.model_validate(expected["design"]), source)
@@ -59,6 +59,54 @@ def test_debugger_runs_real_graph_without_network(scenario, fault, failed_stage,
         if fault == "semantic-omission":
             assert any(f["kind"] == "omission" for f in result["result"]["review"]["findings"])
     assert result["database_execution"] == "not_run"
+
+
+def test_review_failure_keeps_completed_structure_checks():
+    source, expected = scenarios.load(scenarios.names()[0])
+    result = asyncio.run(
+        execute("reference", "review-reference", Settings(_env_file=None), expected, source, lambda _: None)
+    )
+    checks = {check["check"]: check["status"] for check in result["checks"]}
+
+    assert result["status"] == "failed"
+    assert result["error"]["code"] == "invalid_review_reference"
+    assert checks["생성 스키마·구조 검사"] == "passed"
+    assert checks["동일 모델에서 ERD·DDL 생성"] == "passed"
+    assert checks["검토 결과 스키마·참조·인용 검사"] == "failed"
+
+
+def test_valid_design_without_foreign_keys_passes_debug_checks():
+    source = "직원은 서비스 요청을 등록한다."
+    design = test_design.sample_design()
+    design["requirements"] = design["requirements"][:1]
+    design["requirements"][0].update(text=source, evidence=[source])
+    design["functions"] = design["functions"][:1]
+    design["data_model"]["tables"] = design["data_model"]["tables"][:1]
+    design["data_model"]["tables"][0]["columns"].append(
+        dict(name="content", type="text", nullable=False, primary_key=False, unique=False, references=None)
+    )
+    design["traceability"] = design["traceability"][:1]
+    expected = {"design": design, "review": {"findings": [], "summary": "등록 설계 검토 완료"}}
+    assert not validate_design(Design.model_validate(design), source)
+
+    result = asyncio.run(execute("reference", None, Settings(_env_file=None), expected, source, lambda _: None))
+
+    assert result["status"] == "completed_with_warnings"
+    assert all(check["status"] == "passed" for check in result["checks"])
+
+
+def test_failed_contract_check_marks_run_failed(monkeypatch):
+    source, expected = scenarios.load(scenarios.names()[0])
+    monkeypatch.setattr("scripts.debug_design.render_model", lambda _: ("incorrect ERD", "incorrect DDL"))
+    events = []
+
+    result = asyncio.run(execute("reference", None, Settings(_env_file=None), expected, source, events.append))
+
+    assert all(stage["status"] == "completed" for stage in result["stages"])
+    assert result["status"] == "failed"
+    assert result["error"]["code"] == "contract_check_failed"
+    assert any(check["status"] == "failed" for check in result["checks"])
+    assert events[-1] == {"event": "run_failed", "error": result["error"]}
 
 
 def test_debug_report_escapes_html_and_redacts_known_secrets(tmp_path):

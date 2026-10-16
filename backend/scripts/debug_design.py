@@ -17,8 +17,10 @@ from app.core.config import Settings
 from app.core.exceptions import AppError
 from app.core.logging import setup_logging
 from app.schemas.design import ModelCall
-from app.services import design as service
 from app.services.design_model import render_model, validate_design
+from app.services.design_pipeline import model_client
+from app.services.design_pipeline.errors import failure
+from app.services.design_pipeline.graph import graph
 
 BACKEND = Path(__file__).resolve().parents[1]
 STAGES = {
@@ -92,19 +94,21 @@ def inject_fault(expected, fault):
 
 def contract_checks(state, calls, mode):
     design = state.get("design")
-    if design is None or state.get("errors"):
-        return [{"check": "생성 스키마·구조 검사", "status": "failed"}]
+    structure_passed = design is not None and not validate_design(design, state["source"])
     checks = [
-        ("검토 결과 스키마·참조·인용 검사", "review" in state),
-        ("생성 스키마·구조 검사", not validate_design(design, state["source"])),
+        ("생성 스키마·구조 검사", structure_passed),
         (
             "동일 모델에서 ERD·DDL 생성",
-            "postgresql_ddl" in state and render_model(design) == (state["mermaid_erd"], state["postgresql_ddl"]),
+            structure_passed
+            and "mermaid_erd" in state
+            and "postgresql_ddl" in state
+            and render_model(design) == (state["mermaid_erd"], state["postgresql_ddl"]),
         ),
-        ("FK로 연결한 데이터 모델 존재", any(c.references for t in design.data_model.tables for c in t.columns)),
+        ("검토 결과 스키마·참조·인용 검사", "review" in state),
         (
             "저장 불필요 요구사항의 사유와 빈 테이블 연결",
-            all(
+            design is not None
+            and all(
                 r.needs_storage
                 or any(
                     t.requirement_id == r.id and not t.tables and t.no_storage_reason.strip()
@@ -125,27 +129,27 @@ async def execute(mode, fault, settings, expected, source, event_sink):
     fixture = json.loads(json.dumps(expected))
     inject_fault(fixture, fault)
     calls, stages, state = [], {}, {"source": source}
-    original_call = service.call_model
+    original_call = model_client.call_model
 
-    async def inspected_call(payload, stage, schema, context):
+    async def inspected_call(payload, stage, schema, context, role_instructions):
         started = time.monotonic()
         call = {
             "stage": stage,
             "kind": "reference_replay" if mode == "reference" else "anthropic_api",
             "status": "running",
             "schema": schema.__name__,
-            "system_prompt": service.SYSTEM + (service.GENERATE if stage == "generate" else service.REVIEW),
+            "system_prompt": model_client.SYSTEM + role_instructions,
             "input": json.loads(payload),
         }
         calls.append(call)
         event_sink({"event": "model_start", "stage": stage, "call": call})
         try:
             if mode == "live":
-                raw, usage = await original_call(payload, stage, schema, context)
+                raw, usage = await original_call(payload, stage, schema, context, role_instructions)
             else:
                 if stage == "generate" and fault in ("truncated", "api-error"):
                     code = "model_output_truncated" if fault == "truncated" else "model_api_failed"
-                    raise service.failure(
+                    raise failure(
                         code, "오류 주입: 출력 한도 초과" if fault == "truncated" else "오류 주입: 외부 API 실패", stage
                     )
                 raw = (
@@ -175,9 +179,9 @@ async def execute(mode, fault, settings, expected, source, event_sink):
 
     error = None
     # CLI 전용 프로세스에서 모델 경계만 관찰한다. 서비스 그래프·노드·분기 자체는 그대로 사용한다.
-    with patch.object(service, "call_model", inspected_call):
+    with patch.object(model_client, "call_model", inspected_call):
         try:
-            async for event in service.graph.astream(
+            async for event in graph.astream(
                 state, context={"settings": settings, "tracer": None}, stream_mode="debug"
             ):
                 payload = event["payload"]
@@ -196,9 +200,10 @@ async def execute(mode, fault, settings, expected, source, event_sink):
                 elif event["type"] == "task_result":
                     stage = stages[name]
                     output = payload["result"]
-                    state.update(output)
+                    for key, value in output.items():
+                        state[key] = state.get(key, []) + value if key == "calls" else value
                     stage.update(
-                        status="failed" if payload.get("error") or output.get("errors") else "completed",
+                        status="failed" if payload.get("error") or output.get("failure") else "completed",
                         output=serializable(output),
                         ended_at=event["timestamp"],
                     )
@@ -210,10 +215,8 @@ async def execute(mode, fault, settings, expected, source, event_sink):
                     )
                     event_sink({"event": "stage_end", **stage})
                     print(f"  {stage['status']} · {stage['duration_ms']} ms", flush=True)
-            if state.get("errors"):
-                error = {"code": "structure_invalid", "stage": "validate", "issues": state["errors"]}
-        except AppError as exc:
-            error = {"code": exc.code, "message": exc.message, "detail": exc.detail}
+            if failed := state.get("failure"):
+                error = {"code": failed["code"], "message": failed["message"], "detail": failed["detail"]}
         except Exception:
             error = {
                 "code": "unexpected_error",
@@ -224,6 +227,9 @@ async def execute(mode, fault, settings, expected, source, event_sink):
             stages[name] = {"name": name, "status": "skipped", "reason": "선행 단계 실패로 실행하지 않음"}
         elif stages[name]["status"] == "running":
             stages[name].update(status="failed", error=error)
+    checks = contract_checks(state, calls, mode)
+    if not error and any(check["status"] == "failed" for check in checks):
+        error = {"code": "contract_check_failed", "message": "디버거 실행·구조 계약 검사에 실패했습니다."}
     if error:
         event_sink({"event": "run_failed", "error": error})
     return {
@@ -234,7 +240,7 @@ async def execute(mode, fault, settings, expected, source, event_sink):
         "external_model_calls": sum(c.get("error", {}).get("code") != "model_not_configured" for c in calls)
         if mode == "live"
         else 0,
-        "checks": contract_checks(state, calls, mode),
+        "checks": checks,
         "result": serializable({k: v for k, v in state.items() if k != "raw"}),
         "database_execution": "not_run",
         "semantic_quality": "human_review_required",
@@ -350,7 +356,7 @@ def run_scenario(name, args, settings, default_limit, secrets):
                 "scenario": name,
                 "fault": args.fault,
                 "tracing": "local_only",
-                "graph": "app.services.design.graph",
+                "graph": "app.services.design_pipeline.graph.graph",
             },
             **result,
         },

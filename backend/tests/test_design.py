@@ -14,6 +14,9 @@ from app.main import create_app
 from app.schemas.design import Design
 from app.services import design as service
 from app.services.design_model import render_model, validate_design
+from app.services.design_pipeline import model_client
+from app.services.design_pipeline.graph import graph
+from app.services.design_pipeline.nodes import artifact_render
 
 SOURCE = "사용자는 서비스 요청을 등록하고 이력을 보관한다. 담당자는 장애를 접수하고 요청과 연결하여 처리한다."
 
@@ -158,7 +161,7 @@ def model_api(monkeypatch):
         assert kwargs["max_retries"] == 0
         return original(**kwargs, http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)))
 
-    monkeypatch.setattr(service.anthropic, "AsyncAnthropic", client)
+    monkeypatch.setattr(model_client.anthropic, "AsyncAnthropic", client)
     return state
 
 
@@ -185,6 +188,15 @@ def test_full_graph_without_langfuse(api, model_api):
     assert 'service_request ||..o{ incident : "request_id"' in data["mermaid_erd"]
     assert data["postgresql_ddl"].index('CREATE TABLE "incident"') < data["postgresql_ddl"].index("ALTER TABLE")
     assert client.get("/health").status_code == 200
+
+
+@pytest.mark.parametrize("state", [{}, {"source": " \n "}, {"source": "가" * 12001}, {"source": 123}])
+def test_direct_graph_rejects_invalid_source(state):
+    result = asyncio.run(graph.ainvoke(state, context={"settings": Settings(_env_file=None), "tracer": None}))
+    assert result["failure"]["code"] == "validation_failed"
+    assert result["failure"]["status"] == 422
+    assert result["failure"]["detail"] == {"stage": "generate"}
+    assert result["calls"] == []
 
 
 @pytest.mark.parametrize(
@@ -236,7 +248,7 @@ def test_invalid_generation_skips_render_and_review(api, model_api, monkeypatch,
         model_api.generation = "private-model-body{"
     elif defect == "schema":
         model_api.generation = {"private-model-body": True}
-    monkeypatch.setattr(service, "render_model", lambda _: pytest.fail("검증 실패 후 render 실행됨"))
+    monkeypatch.setattr(artifact_render, "render_model", lambda _: pytest.fail("검증 실패 후 render 실행됨"))
     response = api[0].post("/api/v1/design", json={"text": SOURCE})
     assert response.status_code == 422
     assert response.json()["code"] == "structure_invalid"
@@ -312,7 +324,11 @@ def test_review_failure_is_not_success(api, model_api, output):
 
 @pytest.mark.parametrize("text", ["", " \n ", "가" * 12001])
 def test_input_limit(api, model_api, text):
-    assert api[0].post("/api/v1/design", json={"text": text}).status_code == 422
+    response = api[0].post("/api/v1/design", json={"text": text})
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation_failed"
+    if text.strip():
+        assert text not in response.text  # 검증 오류 응답에 입력 원문을 싣지 않는다
     assert model_api.requests == []
 
 
@@ -396,7 +412,7 @@ def test_tracing_is_optional_private_and_fail_open(api, model_api, monkeypatch, 
     assert len(model_api.requests) == 2
     serialized = json.dumps(events, ensure_ascii=False)
     assert SOURCE not in serialized
-    assert service.SYSTEM not in serialized
+    assert model_client.SYSTEM not in serialized
     assert "test-placeholder" not in serialized
     assert "private telemetry error" not in response.text
     if broken is None:
@@ -425,7 +441,7 @@ def test_real_langfuse_sdk_exports_only_metadata(api, model_api, monkeypatch):
         assert all(s.parent.span_id == root.context.span_id for s in spans if s.name != "design")
         attributes = json.dumps([dict(s.attributes) for s in spans], ensure_ascii=False)
         assert "input_tokens" in attributes and "duration_ms" in attributes
-        assert SOURCE not in attributes and service.SYSTEM not in attributes
+        assert SOURCE not in attributes and model_client.SYSTEM not in attributes
         assert "C-REQ-1" not in attributes and "이력 구조" not in attributes
         assert all(not s.events for s in spans)
     finally:

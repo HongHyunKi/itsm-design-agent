@@ -6,12 +6,11 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import design, health, items
+from app.api.v1 import design, health
 from app.core.config import get_settings
 from app.core.exceptions import AppError
 from app.core.logging import get_request_logger, setup_logging
 from app.db.init_db import init_db
-from app.db.seed import seed
 from app.schemas.common import ErrorResponse
 
 
@@ -21,8 +20,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_logging(settings.log_level)
     if settings.initialize_database:
         init_db()
-        if not settings.is_live:
-            seed()
     yield
 
 
@@ -37,7 +34,6 @@ def create_app() -> FastAPI:
         openapi_tags=[
             {"name": "design", "description": "요구사항 기반 설계 생성"},
             {"name": "health", "description": "서버 상태 확인"},
-            {"name": "items", "description": "샘플 코드 · 기본 CRUD 예제"},
         ],
         lifespan=lifespan,
     )
@@ -74,7 +70,6 @@ def create_app() -> FastAPI:
 
     app.include_router(design.router, prefix="/api/v1")
     app.include_router(health.router)
-    app.include_router(items.router, prefix="/api/v1")
 
     default_openapi = app.openapi
 
