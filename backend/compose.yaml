@@ -23,11 +23,15 @@ services:
     environment:
       INITIALIZE_DATABASE: "true"
       DATABASE_URL: postgresql+psycopg://app:app@db:5432/app
+      STORAGE_ROOT: /data
     ports:
       - "8000:8000"
+    volumes:
+      - storage:/data
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
   pgdata:
+  storage:

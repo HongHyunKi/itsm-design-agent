@@ -1,7 +1,0 @@
-{
-  "dependencies": ["."],
-  "graphs": {
-    "design": "./app/services/design_pipeline/graph.py:graph"
-  },
-  "env": ".env"
-}

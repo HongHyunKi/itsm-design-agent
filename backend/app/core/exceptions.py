@@ -29,25 +29,7 @@ class NotFound(AppError):
     message = "Resource not found"
 
 
-class AuthFailed(AppError):
-    status_code = 401
-    code = "auth_failed"
-    message = "Authentication failed"
-
-
-class PermissionDenied(AppError):
-    status_code = 403
-    code = "permission_denied"
-    message = "Permission denied"
-
-
 class ValidationFailed(AppError):
     status_code = 422
     code = "validation_failed"
     message = "Validation failed"
-
-
-class RateLimited(AppError):
-    status_code = 429
-    code = "rate_limited"
-    message = "Too many requests"
